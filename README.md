@@ -2,11 +2,9 @@
 
 This is a small package for node.js to allow the analysis of image data in a Buffer, and return mime-type, and image dimensions for the data.
 
-It is designed to be fast, completely written in javascript and have no dependencies on external packages or libraries.
+It is designed to be fast, completely written in javascript.
 
-Currently it supports Png, Jpeg, Gif and (uncompressed) Swf analysis.
-
-If you also have zlib available (`npm install zlib`) then it will support compressed Swf files.
+Currently it supports Png, Jpeg, Gif and Swf(uncompressed, deflate and LZMA) analysis.
 
 ## Usage:
 
