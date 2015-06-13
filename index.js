@@ -57,7 +57,7 @@ function readBit(buffer, offset, bitOffset) {
 
 function readBits(buffer, offset, bitOffset, bitLen, signed) {
 	var val = 0;
-	
+
 	var neg = false;
 	if (signed) {
 		if (readBit(buffer, offset, bitOffset) > 0) {
@@ -98,7 +98,7 @@ function imageInfoPng(buffer) {
 		format: 'PNG',
 		mimeType: 'image/png',
 		width: readUInt32(buffer, pos, true),
-		height: readUInt32(buffer, pos+4, true),
+		height: readUInt32(buffer, pos+4, true)
 	};
 }
 
@@ -115,7 +115,7 @@ function imageInfoJpg(buffer) {
 				format: 'JPG',
 				mimeType: 'image/jpeg',
 				width: readUInt16(buffer, pos+2, true),
-				height: readUInt16(buffer, pos, true),
+				height: readUInt16(buffer, pos, true)
 			};
 		}
 
@@ -133,20 +133,56 @@ function imageInfoGif(buffer) {
 		format: 'GIF',
 		mimeType: 'image/gif',
 		width: readUInt16(buffer, pos, false),
-		height: readUInt16(buffer, pos+2, false),
+		height: readUInt16(buffer, pos+2, false)
 	};
 }
 
-function imageInfoSwf(buffer) {
-	var pos = 8,
+/**
+ * Found advice for SWF 2 7Z LZMA-Header conversion:
+ * https://helpx.adobe.com/flash-player/kb/exception-thrown-you-decompress-lzma-compressed.html
+ *
+ * @param buffer swf-lzma formated
+ * @return buffer 7z-lzma formated
+ */
+function convertSwfTo7zLzmaHeader(buffer) {
+
+    var scriptlen = buffer[4] & 0xFF | (buffer[5] & 0xFF) << 8 | (buffer[6] & 0xFF) << 16 | buffer[7] << 24;
+    scriptlen -= 8;
+
+    var lzmaProperties = buffer.slice(12, 17);
+
+    var headerUnCompressedSize = new Buffer([scriptlen & 0xFF, (scriptlen >> 8) & 0xFF, (scriptlen >> 16) & 0xFF, (scriptlen >> 24) & 0xFF, 0, 0, 0, 0 ]);
+
+    var newHeader = Buffer.concat([ lzmaProperties, headerUnCompressedSize ]);
+
+    var sevenZipLZMAFormatedData = Buffer.concat([newHeader, buffer.slice(17)]);
+
+    return sevenZipLZMAFormatedData;
+}
+
+
+function imageInfoSwf(buffer, cb, p, extraInfo) {
+
+	var pos = p > -1 ? p : 8,
 		bitPos = 0,
 		val;
+
+    if (!extraInfo) {
+        extraInfo = {
+            flashVersion: buffer[3],
+            isCompressed: buffer[0] === 0x43 || buffer[0] === 0x5a,
+            uncompressedSize: buffer[4] & 0xFF | (buffer[5] & 0xFF) << 8 | (buffer[6] & 0xFF) << 16 | buffer[7] << 24
+        }
+    }
 
 	if (buffer[0] === 0x43) {
 		try {
 			// If you have zlib available ( npm install zlib ) then we can read compressed flash files
-			buffer = require('zlib').inflate(buffer.slice(8, 100));
-			pos = 0;
+            require('zlib').inflate(buffer.slice(8), function (error, buffer) {
+                imageInfoSwf(buffer, cb, 0, extraInfo);
+            });
+
+            return;
 		}
 		catch (ex) {
 			// Can't get width/height of compressed flash files... yet (need zlib)
@@ -154,15 +190,43 @@ function imageInfoSwf(buffer) {
 				type: 'flash',
 				format: 'SWF',
 				mimeType: 'application/x-shockwave-flash',
+                version: extraInfo ? extraInfo.flashVersion : null,
+                isCompressed: extraInfo ? extraInfo.isCompressed : null,
+                uncompressedSize: extraInfo ? extraInfo.uncompressedSize : null,
 				width: null,
-				height: null,
+				height: null
 			}
 		}
-	}
+	} else if (buffer[0] === 0x5a) {
+
+        //swf file is lzma compressed
+
+        try {
+            var lzmaBuffer = convertSwfTo7zLzmaHeader(buffer);
+
+            require("lzma").decompress(lzmaBuffer, function(uncompressedBuffer) {
+                imageInfoSwf(uncompressedBuffer, cb, 0, extraInfo);
+            });
+            return;
+        }
+        catch (ex) {
+            return {
+                type: 'flash',
+                format: 'SWF',
+                mimeType: 'application/x-shockwave-flash',
+                version: extraInfo ? extraInfo.flashVersion : null,
+                isCompressed: extraInfo ? extraInfo.isCompressed : null,
+                uncompressedSize: extraInfo ? extraInfo.uncompressedSize : null,
+                width: null,
+                height: null
+            }
+        }
+
+    }
 
 	var numBits = readBits(buffer, pos, bitPos, 5)[0];
 	bitPos += 5;
-	
+
 	val = readBits(buffer, pos, bitPos, numBits, true);
 	var xMin = (numBits > 9 ? readUInt16(val, 0, true) : val[0]) * (val.negative ? -1 : 1);
 	bitPos += numBits;
@@ -178,13 +242,23 @@ function imageInfoSwf(buffer) {
 	val = readBits(buffer, pos, bitPos, numBits, true);
 	var yMax = (numBits > 9 ? readUInt16(val, 0, true) : val[0]) * (val.negative ? -1 : 1);
 
-	return {
+    var byteIdx = 9;
+    var fps = readUInt16(buffer, byteIdx, false) / 256;
+    byteIdx += 2;
+    var frameCount = readUInt16(buffer, byteIdx, false);
+
+    cb({
 		type: 'flash',
 		format: 'SWF',
 		mimeType: 'application/x-shockwave-flash',
+        version: extraInfo ? extraInfo.flashVersion : null,
+        isCompressed: extraInfo ? extraInfo.isCompressed : null,
+        uncompressedSize: extraInfo ? extraInfo.uncompressedSize : null,
+        fps: fps,
+        frameCount: frameCount,
 		width: Math.ceil((xMax - xMin) / 20),
-		height: Math.ceil((yMax - yMin) / 20),
-	};
+		height: Math.ceil((yMax - yMin) / 20)
+	});
 }
 
 function checkSig(buffer, offset, sig) {
@@ -214,17 +288,17 @@ function checkSig(buffer, offset, sig) {
 	return true;
 }
 
-module.exports = function imageInfo(buffer, path) {
+module.exports = function imageInfo(buffer, cb) {
 	var pngSig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 	var jpgSig = [0xff, 0xd8, 0xff];
 	var gifSig = [0x47, 0x49, 0x46, 0x38, [0x37, 0x39], 0x61];
-	var swfSig = [[0x46, 0x43], 0x57, 0x53];
+	var swfSig = [[0x46, 0x43, 0x5a], 0x57, 0x53];
 
-	if (checkSig(buffer, 0, pngSig)) return imageInfoPng(buffer);
-	if (checkSig(buffer, 0, jpgSig)) return imageInfoJpg(buffer);
-	if (checkSig(buffer, 0, gifSig)) return imageInfoGif(buffer);
-	if (checkSig(buffer, 0, swfSig)) return imageInfoSwf(buffer);
+	if (checkSig(buffer, 0, pngSig)) cb(imageInfoPng(buffer));
+	else if (checkSig(buffer, 0, jpgSig)) cb(imageInfoJpg(buffer));
+    else if (checkSig(buffer, 0, gifSig)) cb(imageInfoGif(buffer));
+    else if (checkSig(buffer, 0, swfSig)) imageInfoSwf(buffer, cb);
+    else cb({});
 
-	return false;
 };
 
