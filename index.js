@@ -261,6 +261,14 @@ function imageInfoSwf(buffer, cb, p, extraInfo) {
 	});
 }
 
+function imageInfoUnity(buffer) {
+	return {
+		type: 'unity',
+		format: 'UNITY3D',
+		mimeType: 'application/vnd.unity'
+	};
+}
+
 function checkSig(buffer, offset, sig) {
 	var len = sig.length;
 	for (var i = 0; i < len; i++) {
@@ -293,12 +301,14 @@ module.exports = function imageInfo(buffer, cb) {
 	var jpgSig = [0xff, 0xd8, 0xff];
 	var gifSig = [0x47, 0x49, 0x46, 0x38, [0x37, 0x39], 0x61];
 	var swfSig = [[0x46, 0x43, 0x5a], 0x57, 0x53];
+	var unity3dSig = [0x55, 0x6e, 0x69, 0x74, 0x79, 0x57, 0x65, 0x62];
 
 	if (checkSig(buffer, 0, pngSig)) cb(imageInfoPng(buffer));
 	else if (checkSig(buffer, 0, jpgSig)) cb(imageInfoJpg(buffer));
     else if (checkSig(buffer, 0, gifSig)) cb(imageInfoGif(buffer));
-    else if (checkSig(buffer, 0, swfSig)) imageInfoSwf(buffer, cb);
-    else cb({});
+	else if (checkSig(buffer, 0, swfSig)) imageInfoSwf(buffer, cb);
+	else if (checkSig(buffer, 0, unity3dSig)) cb(imageInfoUnity(buffer));
+	else cb({});
 
 };
 
