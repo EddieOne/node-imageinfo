@@ -4,7 +4,7 @@ This is a small package for node.js to allow the analysis of image data in a Buf
 
 It is designed to be fast, completely written in javascript.
 
-Currently it supports Png, Jpeg, Gif and Swf(uncompressed, deflate and LZMA) analysis.
+Currently it supports Png, Jpeg, Gif, Swf(uncompressed, deflate and LZMA), Unity3d (basic) analysis.
 
 ## Usage:
 
